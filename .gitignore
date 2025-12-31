@@ -1,0 +1,11 @@
+# --- Python Backend ---
+venv/
+__pycache__/
+*.pyc
+
+# --- Security ---
+.env
+
+# --- Frontend ---
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,95 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import pandas as pd
+import math
+
+# Import our new lightweight logic
+from logic import extract_author_id, load_or_fetch_author, evaluate_author_data_headless
+from database import update_publication_venues
+
+app = FastAPI()
+
+# --- 1. CORS SETUP ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- 2. DATA MODELS ---
+class AnalyzeRequest(BaseModel):
+    url: str
+    is_cs_ai: bool = True
+
+# --- 3. HELPER: The "Sanitizer" ---
+def clean_nans(value):
+    """
+    Recursively finds NaN (Not a Number) or Infinity in dictionaries/lists
+    and replaces them with None (which becomes 'null' in JSON).
+    """
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+    if isinstance(value, dict):
+        return {k: clean_nans(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [clean_nans(v) for v in value]
+    return value
+
+# --- 4. THE ANALYZE ENDPOINT ---
+@app.post("/analyze")
+async def analyze_researcher(request: AnalyzeRequest):
+    # A. Validate & Extract ID
+    aid = extract_author_id(request.url)
+    if not aid:
+        raise HTTPException(status_code=400, detail="Invalid Google Scholar URL")
+
+    # B. Fetch Data
+    try:
+        data = load_or_fetch_author(aid)
+    except Exception as e:
+        print(f"Scraping Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch researcher data.")
+
+    if not data or not data.get("publications"):
+        raise HTTPException(status_code=404, detail="No publications found for this researcher.")
+
+    # C. Run Logic (Headless)
+    try:
+        metrics, df = evaluate_author_data_headless(data, request.is_cs_ai)
+    except Exception as e:
+        print(f"Logic Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing data: {str(e)}")
+
+    # D. Database Update
+    try:
+        update_publication_venues(metrics["id"], df)
+    except Exception as e:
+        print(f"Database Update Error: {e}")
+
+    # E. Format Response (With Safety Net)
+    # 1. Clean the DataFrame (Pandas method)
+    df_clean = df.where(pd.notnull(df), None)
+    
+    # 2. Build the final response
+    raw_response = {
+        "status": "success",
+        "profile": {
+            "name": metrics["name"],
+            "id": metrics["id"],
+            "academic_age": metrics["academic_age"],
+            "affiliations": data.get("affiliations")
+        },
+        "metrics": metrics,
+        "papers": df_clean.to_dict(orient="records")
+    }
+
+    # 3. Final Sanitize (Catches any remaining NaNs in 'metrics')
+    return clean_nans(raw_response)
+
+@app.get("/")
+def home():
+    return {"message": "ComPARE Intelligence API is running."}
