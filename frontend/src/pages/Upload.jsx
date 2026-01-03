@@ -1,17 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 
-/**
- * Single-file version of:
- * - App.jsx + App.css
- * - RoleBoard.jsx + RoleBoard.css
- * - RoleCard.jsx + RoleCard.css
- * - PasswordModal.jsx + PasswordModal.css
- *
- * Styles are injected via <style> tag below.
- */
-
 const ADMIN_PASSWORD = "MDS10";
 
+/* ---------------- Password Modal ---------------- */
 function PasswordModal({ open, title, subtitle, error, onConfirm, onCancel }) {
   const [password, setPassword] = useState("");
 
@@ -65,6 +56,7 @@ function PasswordModal({ open, title, subtitle, error, onConfirm, onCancel }) {
   );
 }
 
+/* ---------------- Role Card ---------------- */
 function RoleCard({ role, listType, onUpdate, onDelete, onMoveToHired }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -158,6 +150,7 @@ function RoleCard({ role, listType, onUpdate, onDelete, onMoveToHired }) {
   );
 }
 
+/* ---------------- Role Board ---------------- */
 function RoleBoard({
   requiredRoles,
   hiredRoles,
@@ -211,18 +204,21 @@ function RoleBoard({
   );
 }
 
-export default function App() {
+/* ---------------- Page ---------------- */
+export default function UploadPage() {
   const [requiredRoles, setRequiredRoles] = useState([]);
   const [hiredRoles, setHiredRoles] = useState([]);
 
   // file upload refs/state
   const fileInputRef = useRef(null);
   const [uploadedFile, setUploadedFile] = useState(null);
-  const [pendingFile, setPendingFile] = useState(null);
 
   // password modal state
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+
+  // ✅ NEW: only allow file picker AFTER password verified
+  const [isUploadAuthorized, setIsUploadAuthorized] = useState(false);
 
   function handleCreateRole() {
     const newRole = {
@@ -242,44 +238,57 @@ export default function App() {
     setHiredRoles((prev) => [roleToMove, ...prev]);
   }
 
-  function handleUploadClick() {
-    fileInputRef.current?.click();
-  }
-
-  function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setPendingFile(file);
-    setPasswordError("");
-    setPasswordOpen(true);
-  }
-
   function clearFileInput() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function handlePasswordConfirm(enteredPassword) {
-    if (enteredPassword === ADMIN_PASSWORD) {
-      setUploadedFile(pendingFile);
-      setPendingFile(null);
-      setPasswordOpen(false);
-      setPasswordError("");
+  // ✅ NEW FLOW:
+  // Click Upload -> ask password first
+  function handleUploadClick() {
+    setPasswordError("");
+    setPasswordOpen(true);
+  }
+
+  // ✅ Only runs after password success (because we click input programmatically)
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Safety check
+    if (!isUploadAuthorized) {
       clearFileInput();
       return;
     }
 
-    setPasswordError("Incorrect password. Upload cancelled.");
-    setUploadedFile(null);
-    setPendingFile(null);
+    setUploadedFile(file);
+
+    // reset auth so next time needs password again
+    setIsUploadAuthorized(false);
     clearFileInput();
+  }
+
+  // ✅ Password verified -> then open file picker
+  function handlePasswordConfirm(enteredPassword) {
+    if (enteredPassword === ADMIN_PASSWORD) {
+      setPasswordOpen(false);
+      setPasswordError("");
+      setIsUploadAuthorized(true);
+
+      // open file picker AFTER modal closes
+      setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 0);
+
+      return;
+    }
+
+    setPasswordError("Incorrect password.");
   }
 
   function handlePasswordCancel() {
     setPasswordOpen(false);
     setPasswordError("");
-    setPendingFile(null);
-    clearFileInput();
+    setIsUploadAuthorized(false);
   }
 
   function updateRole(listType, id, patch) {
@@ -301,101 +310,87 @@ export default function App() {
     <>
       <style>{styles}</style>
 
-      <div className="app">
-        <main className="page">
-          <div className="headerRow">
-            <div>
-              <div className="label">Name:</div>
-              <h1 className="pageTitle">MDS10</h1>
+      <div className="uploadPageWrap">
+        <div className="headerRow">
+          <div>
+            <div className="label">Upload Page</div>
+            <h1 className="pageTitle">Faculty Quality Upload</h1>
+            <div className="pageSub">
+              Create roles, move candidates, and upload the faculty quality list
+              (password verified before file selection).
             </div>
           </div>
+        </div>
 
-          <div className="actions">
-            <button className="btn btnSecondary" onClick={handleCreateRole}>
-              Create role
-            </button>
+        <div className="actions">
+          <button className="btn btnSecondary" onClick={handleCreateRole}>
+            Create role
+          </button>
 
-            <button className="btn btnPrimary" onClick={handleUploadClick}>
-              Upload faculty quality list
-            </button>
+          <button className="btn btnPrimary" onClick={handleUploadClick}>
+            Upload faculty quality list
+          </button>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.xlsx,.xls,.pdf,.txt"
-              onChange={handleFileChange}
-              style={{ display: "none" }}
-            />
-
-            {uploadedFile ? (
-              <div className="uploadHint">
-                ✅ Uploaded: <span className="fileName">{uploadedFile.name}</span>
-              </div>
-            ) : (
-              <div className="uploadHint">
-                {passwordError ? (
-                  <span className="errorText">{passwordError}</span>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          <RoleBoard
-            requiredRoles={requiredRoles}
-            hiredRoles={hiredRoles}
-            onUpdateRole={updateRole}
-            onDeleteRole={deleteRole}
-            onMoveToHired={moveToHired}
+          {/* hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls,.pdf,.txt"
+            onChange={handleFileChange}
+            style={{ display: "none" }}
           />
 
-          <PasswordModal
-            open={passwordOpen}
-            title="Admin Password Required"
-            subtitle="Enter the admin password to upload this file."
-            error={passwordError}
-            onConfirm={handlePasswordConfirm}
-            onCancel={handlePasswordCancel}
-          />
-        </main>
+          {uploadedFile ? (
+            <div className="uploadHint">
+              ✅ Uploaded: <span className="fileName">{uploadedFile.name}</span>
+            </div>
+          ) : (
+            <div className="uploadHint">
+              <span className="mutedHint">No file uploaded yet.</span>
+            </div>
+          )}
+        </div>
+
+        <RoleBoard
+          requiredRoles={requiredRoles}
+          hiredRoles={hiredRoles}
+          onUpdateRole={updateRole}
+          onDeleteRole={deleteRole}
+          onMoveToHired={moveToHired}
+        />
+
+        <PasswordModal
+          open={passwordOpen}
+          title="Admin Password Required"
+          subtitle="Enter the admin password to continue."
+          error={passwordError}
+          onConfirm={handlePasswordConfirm}
+          onCancel={handlePasswordCancel}
+        />
       </div>
     </>
   );
 }
 
+
 const styles = `
 :root {
   --blue: #4aa2c9;
-  --blue-dark: #2e86ae;
   --text: #1f2937;
   --muted: #6b7280;
-  --card-border: #cfd9e3;
-  --soft: #eef3f7;
 }
 
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  color: var(--text);
-  background: #ffffff;
+.uploadPageWrap{
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 18px 60px;
 }
 
-.app { min-height: 100vh; }
-
-.page { padding: 32px 48px; }
-
-.label {
-  font-size: 14px;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-
-.pageTitle {
-  margin: 0;
-  font-size: 48px;
-  font-weight: 500;
-}
+.headerRow { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
+.label { font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+.pageTitle { margin: 0; font-size: 44px; font-weight: 800; color: #111827; letter-spacing: -0.03em; }
+.pageSub { margin-top: 8px; color: #6B7280; max-width: 760px; line-height: 1.6; }
 
 .actions {
   margin-top: 18px;
@@ -413,17 +408,15 @@ body {
   cursor: pointer;
   transition: transform 0.05s ease, opacity 0.2s ease;
 }
-
 .btn:active { transform: translateY(1px); }
-
 .btnPrimary { background: var(--blue); color: white; }
 .btnSecondary { background: #e8edf3; color: #2a2f36; }
-
 .btn:hover { opacity: 0.92; }
 
 .uploadHint { font-size: 13px; color: var(--muted); }
-.fileName { color: var(--text); font-weight: 500; }
-.errorText { color: #b42318; font-weight: 500; }
+.fileName { color: var(--text); font-weight: 600; }
+.errorText { color: #b42318; font-weight: 700; }
+.mutedHint { color: #9CA3AF; }
 
 /* RoleBoard.css */
 .board {
@@ -433,19 +426,13 @@ body {
   gap: 56px;
   align-items: start;
 }
-
 .columnTitle {
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 700;
   color: #374151;
   margin: 0 0 14px 0;
 }
-
-.cardStack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+.cardStack { display: flex; flex-direction: column; gap: 16px; }
 
 /* RoleCard.css */
 .roleCard {
@@ -455,7 +442,6 @@ body {
   background: white;
   overflow: hidden;
 }
-
 .roleHeader {
   background: #6fb7d4;
   color: white;
@@ -465,7 +451,6 @@ body {
   align-items: center;
   gap: 10px;
 }
-
 .roleHeaderInput {
   width: 100%;
   border: none;
@@ -473,17 +458,9 @@ body {
   background: transparent;
   color: white;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
-
-.roleHeaderInput::placeholder { color: rgba(255, 255, 255, 0.8); }
-
-.menuWrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
+.menuWrap { position: relative; display: flex; align-items: center; }
 .moreBtn {
   border: none;
   background: transparent;
@@ -493,14 +470,7 @@ body {
   align-items: center;
   padding: 6px;
 }
-
-.dot {
-  width: 4px;
-  height: 4px;
-  background: white;
-  border-radius: 999px;
-  display: inline-block;
-}
+.dot { width: 4px; height: 4px; background: white; border-radius: 999px; display: inline-block; }
 
 .menu {
   position: absolute;
@@ -514,7 +484,6 @@ body {
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.08);
   z-index: 50;
 }
-
 .menuItem {
   width: 100%;
   text-align: left;
@@ -525,7 +494,6 @@ body {
   cursor: pointer;
   font-size: 13px;
 }
-
 .menuItem:hover { background: #f3f4f6; }
 .menuItem.danger { color: #b42318; }
 
@@ -535,11 +503,8 @@ body {
   flex-direction: column;
   gap: 12px;
 }
-
 .field { display: flex; flex-direction: column; gap: 6px; }
-
 .fieldLabel { font-size: 12px; color: #6b7280; }
-
 .fieldInput {
   border: 1px solid #cfd9e3;
   outline: none;
@@ -547,12 +512,10 @@ body {
   padding: 10px 10px;
   font-size: 13px;
 }
-
 .fieldInput:focus {
   border-color: #6fb7d4;
   box-shadow: 0 0 0 3px rgba(111, 183, 212, 0.18);
 }
-
 .emptyState {
   width: 320px;
   padding: 14px;
@@ -572,7 +535,6 @@ body {
   z-index: 999;
   padding: 18px;
 }
-
 .modalCard {
   width: 100%;
   max-width: 420px;
@@ -582,34 +544,10 @@ body {
   box-shadow: 0 20px 38px rgba(0, 0, 0, 0.2);
   padding: 18px 18px 16px 18px;
 }
-
-.modalTitle {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.modalSubtitle {
-  margin: 8px 0 16px 0;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.modalForm {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.modalLabel {
-  font-size: 12px;
-  color: #6b7280;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
+.modalTitle { margin: 0; font-size: 18px; font-weight: 800; color: #111827; }
+.modalSubtitle { margin: 8px 0 16px 0; font-size: 13px; color: #6b7280; }
+.modalForm { display: flex; flex-direction: column; gap: 12px; }
+.modalLabel { font-size: 12px; color: #6b7280; display: flex; flex-direction: column; gap: 8px; }
 .modalInput {
   border: 1px solid #cfd9e3;
   outline: none;
@@ -617,12 +555,10 @@ body {
   padding: 12px 12px;
   font-size: 14px;
 }
-
 .modalInput:focus {
   border-color: #6fb7d4;
   box-shadow: 0 0 0 3px rgba(111, 183, 212, 0.18);
 }
-
 .modalError {
   font-size: 13px;
   color: #b42318;
@@ -631,22 +567,8 @@ body {
   padding: 10px 12px;
   border-radius: 12px;
 }
-
-.modalActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.modalBtn {
-  border: none;
-  cursor: pointer;
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 13px;
-}
-
+.modalActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.modalBtn { border: none; cursor: pointer; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
 .modalBtnPrimary { background: #4aa2c9; color: white; }
 .modalBtnGhost { background: #eef2f7; color: #111827; }
 `;
