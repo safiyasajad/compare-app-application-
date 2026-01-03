@@ -56,6 +56,43 @@ function PasswordModal({ open, title, subtitle, error, onConfirm, onCancel }) {
   );
 }
 
+/* ---------------- List Type Modal ---------------- */
+function ListTypeModal({ open, value, onChange, onCancel }) {
+  if (!open) return null;
+
+  return (
+    <div className="modalOverlay" role="dialog" aria-modal="true">
+      <div className="modalCard">
+        <h3 className="modalTitle">Choose list type</h3>
+        <p className="modalSubtitle">
+          Select what you are uploading before choosing the file.
+        </p>
+
+        <div className="modalForm">
+          <label className="modalLabel">
+            List type
+            <select className="modalSelect" value={value} onChange={onChange}>
+              <option value="">Select…</option>
+              <option value="journal">Journal list</option>
+              <option value="conference">Conference list</option>
+            </select>
+          </label>
+
+          <div className="modalActions">
+            <button
+              type="button"
+              className="modalBtn modalBtnGhost"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Role Card ---------------- */
 function RoleCard({ role, listType, onUpdate, onDelete, onMoveToHired }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -209,15 +246,20 @@ export default function UploadPage() {
   const [requiredRoles, setRequiredRoles] = useState([]);
   const [hiredRoles, setHiredRoles] = useState([]);
 
-  // file upload refs/state
   const fileInputRef = useRef(null);
+
+  // store: { file, type } or null
   const [uploadedFile, setUploadedFile] = useState(null);
 
-  // password modal state
+  // password modal
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordError, setPasswordError] = useState("");
 
-  // ✅ NEW: only allow file picker AFTER password verified
+  // list type modal
+  const [listTypeOpen, setListTypeOpen] = useState(false);
+  const [selectedListType, setSelectedListType] = useState("");
+
+  // allow upload only after password ok
   const [isUploadAuthorized, setIsUploadAuthorized] = useState(false);
 
   function handleCreateRole() {
@@ -242,53 +284,70 @@ export default function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // ✅ NEW FLOW:
-  // Click Upload -> ask password first
-  function handleUploadClick() {
-    setPasswordError("");
-    setPasswordOpen(true);
-  }
-
-  // ✅ Only runs after password success (because we click input programmatically)
-  function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Safety check
-    if (!isUploadAuthorized) {
-      clearFileInput();
-      return;
-    }
-
-    setUploadedFile(file);
-
-    // reset auth so next time needs password again
+  function resetUploadFlow() {
     setIsUploadAuthorized(false);
+    setSelectedListType("");
+    setListTypeOpen(false);
     clearFileInput();
   }
 
-  // ✅ Password verified -> then open file picker
+  function handleUploadClick() {
+    setPasswordError("");
+    setPasswordOpen(true);
+    resetUploadFlow();
+  }
+
   function handlePasswordConfirm(enteredPassword) {
     if (enteredPassword === ADMIN_PASSWORD) {
       setPasswordOpen(false);
       setPasswordError("");
       setIsUploadAuthorized(true);
 
-      // open file picker AFTER modal closes
-      setTimeout(() => {
-        fileInputRef.current?.click();
-      }, 0);
-
+      // ✅ open list type modal next
+      setSelectedListType("");
+      setListTypeOpen(true);
       return;
     }
-
     setPasswordError("Incorrect password.");
   }
 
   function handlePasswordCancel() {
     setPasswordOpen(false);
     setPasswordError("");
-    setIsUploadAuthorized(false);
+    resetUploadFlow();
+  }
+
+  function handleListTypeChange(e) {
+    const value = e.target.value;
+    setSelectedListType(value);
+
+    if (!value) return;
+
+    // ✅ close modal then open file picker
+    setListTypeOpen(false);
+    setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 0);
+  }
+
+  function handleListTypeCancel() {
+    setListTypeOpen(false);
+    resetUploadFlow();
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!isUploadAuthorized || !selectedListType) {
+      clearFileInput();
+      return;
+    }
+
+    setUploadedFile({ file, type: selectedListType });
+
+    // reset for next upload
+    resetUploadFlow();
   }
 
   function updateRole(listType, id, patch) {
@@ -316,8 +375,6 @@ export default function UploadPage() {
             <div className="label">Upload Page</div>
             <h1 className="pageTitle">Faculty Quality Upload</h1>
             <div className="pageSub">
-              Create roles, move candidates, and upload the faculty quality list
-              (password verified before file selection).
             </div>
           </div>
         </div>
@@ -331,7 +388,6 @@ export default function UploadPage() {
             Upload faculty quality list
           </button>
 
-          {/* hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
@@ -342,7 +398,8 @@ export default function UploadPage() {
 
           {uploadedFile ? (
             <div className="uploadHint">
-              ✅ Uploaded: <span className="fileName">{uploadedFile.name}</span>
+              ✅ Uploaded ({uploadedFile.type}):{" "}
+              <span className="fileName">{uploadedFile.file.name}</span>
             </div>
           ) : (
             <div className="uploadHint">
@@ -367,11 +424,17 @@ export default function UploadPage() {
           onConfirm={handlePasswordConfirm}
           onCancel={handlePasswordCancel}
         />
+
+        <ListTypeModal
+          open={listTypeOpen}
+          value={selectedListType}
+          onChange={handleListTypeChange}
+          onCancel={handleListTypeCancel}
+        />
       </div>
     </>
   );
 }
-
 
 const styles = `
 :root {
@@ -415,7 +478,6 @@ const styles = `
 
 .uploadHint { font-size: 13px; color: var(--muted); }
 .fileName { color: var(--text); font-weight: 600; }
-.errorText { color: #b42318; font-weight: 700; }
 .mutedHint { color: #9CA3AF; }
 
 /* RoleBoard.css */
@@ -525,7 +587,7 @@ const styles = `
   font-size: 13px;
 }
 
-/* PasswordModal.css */
+/* PasswordModal.css + ListType modal base */
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -548,6 +610,7 @@ const styles = `
 .modalSubtitle { margin: 8px 0 16px 0; font-size: 13px; color: #6b7280; }
 .modalForm { display: flex; flex-direction: column; gap: 12px; }
 .modalLabel { font-size: 12px; color: #6b7280; display: flex; flex-direction: column; gap: 8px; }
+
 .modalInput {
   border: 1px solid #cfd9e3;
   outline: none;
@@ -559,6 +622,21 @@ const styles = `
   border-color: #6fb7d4;
   box-shadow: 0 0 0 3px rgba(111, 183, 212, 0.18);
 }
+
+/* select style */
+.modalSelect {
+  border: 1px solid #cfd9e3;
+  outline: none;
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 14px;
+  background: white;
+}
+.modalSelect:focus {
+  border-color: #6fb7d4;
+  box-shadow: 0 0 0 3px rgba(111, 183, 212, 0.18);
+}
+
 .modalError {
   font-size: 13px;
   color: #b42318;
